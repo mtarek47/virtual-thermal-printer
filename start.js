@@ -7,6 +7,7 @@ import { platform } from 'node:os'
 const isWindows = platform() === 'win32'
 const isMac = platform() === 'darwin'
 const isLinux = platform() === 'linux'
+const npmCmd = isWindows ? 'npm.cmd' : 'npm'
 
 console.log('\x1b[36m%s\x1b[0m', '=======================================================')
 console.log('\x1b[1m\x1b[32m%s\x1b[0m', '   🖨️  Virtual Thermal & Barcode Label Printer Suite')
@@ -19,7 +20,7 @@ console.log('\x1b[36m%s\x1b[0m', '----------------------------------------------
 // 1. Check node_modules
 if (!existsSync('node_modules')) {
 	console.log('📦 Installing dependencies (npm install)...')
-	execSync('npm install', { stdio: 'inherit' })
+	execSync(`${npmCmd} install`, { stdio: 'inherit', shell: true })
 }
 
 // 2. Check build output
@@ -28,7 +29,7 @@ if (
 	!existsSync('packages/escpos-decoder/dist')
 ) {
 	console.log('🔨 Building packages (npm run build)...')
-	execSync('npm run build', { stdio: 'inherit' })
+	execSync(`${npmCmd} run build`, { stdio: 'inherit', shell: true })
 }
 
 // 3. Open browser automatically
@@ -47,7 +48,6 @@ setTimeout(() => {
 
 // 4. Start server
 console.log('🚀 Starting printer server...')
-const npmCmd = isWindows ? 'npm.cmd' : 'npm'
 const child = spawn(
 	npmCmd,
 	['run', 'dev', '--workspace=packages/virtual-thermal-printer'],
