@@ -25,10 +25,12 @@ COPY --from=builder /app/packages/virtual-thermal-printer/dist ./packages/virtua
 COPY --from=builder /app/packages/virtual-thermal-printer/package.json ./packages/virtual-thermal-printer/package.json
 COPY --from=builder /app/packages/virtual-thermal-printer/main.ts ./packages/virtual-thermal-printer/main.ts
 COPY --from=builder /app/packages/virtual-thermal-printer/escpos.ts ./packages/virtual-thermal-printer/escpos.ts
+COPY --from=builder /app/packages/virtual-thermal-printer/label_engine.ts ./packages/virtual-thermal-printer/label_engine.ts
 COPY --from=builder /app/packages/virtual-thermal-printer/settings.ts ./packages/virtual-thermal-printer/settings.ts
 
 EXPOSE 80
 EXPOSE 9100
+EXPOSE 9101
 
 WORKDIR /app/packages/virtual-thermal-printer
 CMD ["npm", "start"]

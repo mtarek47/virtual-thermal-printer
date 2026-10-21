@@ -1,77 +1,93 @@
-# Virtual Thermal Printer
+# Virtual Thermal & Barcode Label Printer Suite
 
-A web-based virtual thermal printer that simulates a real ESC/POS and Epson EPOS
-printer. This tool is designed for developers who need to test point-of-sale
-(POS) applications without a physical printer.
+A web-based dual virtual printer simulator that emulates both a real ESC/POS & Epson ePOS **Receipt Printer** and a TSPL / ZPL **Barcode Sticker Printer**. Designed for developers who need to test point-of-sale (POS) and inventory label applications without physical hardware.
 
 ## Features
 
-- **Epson EPOS Support:** Receives and processes Epson EPOS commands via an HTTP endpoint.
-- **ESC/POS Support:** Receives and processes raw ESC/POS commands via a TCP socket.
-- **Web-Based Rendering:** Renders the print output in a real-time web interface.
+- **Receipt Printer (Bay 1):**
+  - **Epson ePOS:** Receives and processes Epson ePOS XML commands via `/cgi-bin/epos/service.cgi`.
+  - **ESC/POS Socket:** Receives raw ESC/POS commands over TCP port `9100`.
+  - **macOS CUPS Driver:** Prints system documents and receipts directly from macOS apps.
+- **Barcode Sticker Printer (Bay 2):**
+  - **TSPL / TSPL2 Protocol:** Standard label script commands (`SIZE`, `GAP`, `CLS`, `BARCODE`, `QRCODE`, `TEXT`, `BOX`, `PRINT`).
+  - **ZPL II Protocol:** Zebra programming language (`^XA`, `^FO`, `^BC`, `^BQ`, `^FD`, `^XZ`).
+  - **High-Resolution Vector Barcodes:** 1D Barcodes (Code 128, EAN, Code 39) & 2D QR codes rendered with crisp vectors.
+  - **TCP Socket:** Dedicated TCP port `9101` for raw label streams.
+  - **HTTP Endpoints:** `POST /cgi-bin/label/tspl`, `POST /cgi-bin/label/zpl`, `POST /cgi-bin/label/print`.
+- **Dual Side-by-Side Web Interface:**
+  - Real-time live status and paper animations for both printers at `http://localhost:8000`.
+  - Hardware aesthetic casings with LED indicators and quick-test buttons.
+  - Built-in slide-out Settings drawer with copyable endpoints and one-click macOS CUPS setup commands.
 
-## Screenshots
+---
 
-Print jobs rendered in the web interface, laid out like on an 80 mm printer
-(48 columns of Font A):
+## Quick Start (Any OS)
 
-| Receipt | Formatting |
-|---|---|
-| <img src="docs/screenshots/receipt.png" alt="A sample café receipt with a centered header, item and price columns, a double-height total, a QR code and a reversed thank-you line" width="400"> | <img src="docs/screenshots/formatting.png" alt="Bold, underlined, reversed, double-width and double-height text, Font B, alignment, tab stops, line wrapping and an EAN-13 barcode" width="400"> |
+### 🍎 macOS & 🐧 Linux
+Run the start script in your terminal:
+```bash
+./start.sh
+```
+*(Or run `npm start`)*
 
-## Packages
+### 🪟 Windows
+- Simply **double-click** `start.bat` in File Explorer!
+- Or in Command Prompt / PowerShell:
+```cmd
+start.bat
+```
+*(Or `npm start`)*
 
-| Package | Description |
-|---|---|
-| [`escpos-decoder`](packages/escpos-decoder) | Transforms a stream of raw ESC/POS bytes into typed TypeScript blocks |
-| [`virtual-thermal-printer`](packages/virtual-thermal-printer) | HTTP + WebSocket + TCP server with browser UI |
+### ⚡ Universal (Any Platform with Node.js)
+```bash
+npm start
+```
+*This will automatically install dependencies if needed, build the packages, launch your browser at `http://localhost:8000`, and start the printer server.*
 
-## Local Development
+---
+
+## Ports & Endpoints
+
+| Service | Port / URL | Protocol | Description |
+|---|---|---|---|
+| **Web UI** | `http://localhost:8000` | HTTP / WebSocket | Dual visual interface |
+| **Receipt Socket** | `127.0.0.1:9100` | TCP (Raw) | ESC/POS receipt stream |
+| **Receipt ePOS** | `http://localhost:8000/cgi-bin/epos/service.cgi` | HTTP (POST XML) | Epson ePOS SOAP service |
+| **Label Socket** | `127.0.0.1:9101` | TCP (Raw) | TSPL / ZPL label stream |
+| **TSPL HTTP** | `http://localhost:8000/cgi-bin/label/tspl` | HTTP (POST Text) | Direct TSPL script |
+| **ZPL HTTP** | `http://localhost:8000/cgi-bin/label/zpl` | HTTP (POST Text) | Direct ZPL II script |
+
+---
+
+## macOS CUPS Printer Setup
+
+To add these virtual printers as real system printers on macOS (so you can print with **Cmd + P** from Chrome, Word, QZ Tray, or POS software):
+
+**Receipt Printer:**
+```bash
+lpadmin -p "Virtual_Thermal_Printer" -E -v "socket://127.0.0.1:9100" -D "Virtual Thermal Printer" -L "Localhost" -P "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/PrintCore.framework/Versions/A/Resources/GenericPrinter.ppd" && cupsenable Virtual_Thermal_Printer && cupsaccept Virtual_Thermal_Printer
+```
+
+**Barcode Sticker Printer:**
+```bash
+lpadmin -p "Virtual_Label_Printer" -E -v "socket://127.0.0.1:9101" -D "Virtual Barcode Label Printer" -L "Localhost" -P "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/PrintCore.framework/Versions/A/Resources/GenericPrinter.ppd" && cupsenable Virtual_Label_Printer && cupsaccept Virtual_Label_Printer
+```
+
+---
+
+## Manual Development
 
 Requires [Node.js](https://nodejs.org/) 22+.
 
 ```bash
-git clone https://github.com/FilipChalupa/virtual-thermal-printer.git
+git clone https://github.com/mtarek47/virtual-thermal-printer.git
 cd virtual-thermal-printer
 npm install
+npm run build
 npm run dev
 ```
 
-The server starts at `http://localhost:8000` and listens for raw ESC/POS on TCP port `9100`.
-
-Both ports can be overridden:
-
-```bash
-./virtual-thermal-printer --http 8080 --socket 9100
-```
-
-## Sending Print Commands
-
-> [!WARNING]
-> The public server is shared among all users. Any print jobs you send will be
-> visible to anyone currently viewing the page.
-
-### Epson EPOS (HTTP)
-
-> [!WARNING]
-> The public server only supports Epson EPOS commands via HTTP. Raw ESC/POS
-> commands over TCP are **not** supported on the public server and must be used
-> with a locally running instance.
-
-```bash
-curl -X POST \
-  -H "Content-Type: text/xml" \
-  --data @packages/virtual-thermal-printer/fixtures/request1.xml \
-  http://localhost:8000/cgi-bin/epos/service.cgi
-```
-
-### ESC/POS (TCP Socket)
-
-Connect to port `9100` and send raw ESC/POS bytes, e.g. via `netcat`:
-
-```bash
-echo -e "\x1b\x40Hello\x0a" | nc localhost 9100
-```
+---
 
 ## Docker
 
@@ -79,12 +95,10 @@ echo -e "\x1b\x40Hello\x0a" | nc localhost 9100
 npm run docker:build
 npm run docker:start
 ```
-
 Or manually:
-
 ```bash
 docker build -t virtual-thermal-printer .
-docker run --rm -p 8000:80 -p 9100:9100 virtual-thermal-printer
+docker run --rm -p 8000:80 -p 9100:9100 -p 9101:9101 virtual-thermal-printer
 ```
 
 The web UI is available at `http://localhost:8000` and the TCP socket on port `9100`.
