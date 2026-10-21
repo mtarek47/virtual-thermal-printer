@@ -24,6 +24,11 @@ if not exist "node_modules\" (
     )
 )
 
+if not exist "node_modules\@esbuild\win32-x64\" (
+    echo [*] Ensuring Windows esbuild binary is installed...
+    call npm install @esbuild/win32-x64@0.24.2 --no-save
+)
+
 if not exist "packages\virtual-thermal-printer\dist\" (
     echo [*] Building packages (npm run build)...
     call npm run build

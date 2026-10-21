@@ -17,5 +17,11 @@
 		"docker:start": "docker run --rm -p 8000:80 -p 9100:9100 -p 9101:9101 virtual-thermal-printer",
 		"sea:bundle": "npm run build --workspace=packages/escpos-decoder && npm run sea:bundle --workspace=packages/virtual-thermal-printer",
 		"test": "npm run test --workspaces --if-present"
+	},
+	"optionalDependencies": {
+		"@esbuild/win32-x64": "^0.24.2",
+		"@esbuild/darwin-arm64": "^0.24.2",
+		"@esbuild/darwin-x64": "^0.24.2",
+		"@esbuild/linux-x64": "^0.24.2"
 	}
 }

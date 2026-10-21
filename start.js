@@ -23,6 +23,16 @@ if (!existsSync('node_modules')) {
 	execSync(`${npmCmd} install`, { stdio: 'inherit', shell: true })
 }
 
+// 1.1 Ensure platform-specific esbuild binary is installed on Windows
+if (isWindows && !existsSync('node_modules/@esbuild/win32-x64')) {
+	console.log('📦 Installing Windows esbuild binary (@esbuild/win32-x64)...')
+	try {
+		execSync(`${npmCmd} install @esbuild/win32-x64@0.24.2 --no-save`, { stdio: 'inherit', shell: true })
+	} catch (err) {
+		console.warn('Notice: @esbuild/win32-x64 direct install attempted.')
+	}
+}
+
 // 2. Check build output
 if (
 	!existsSync('packages/virtual-thermal-printer/dist') ||

@@ -18,6 +18,11 @@ if (-not (Test-Path "node_modules")) {
     npm install
 }
 
+if (-not (Test-Path "node_modules/@esbuild/win32-x64")) {
+    Write-Host "[*] Ensuring Windows esbuild binary is installed..." -ForegroundColor Yellow
+    npm install @esbuild/win32-x64@0.24.2 --no-save
+}
+
 if (-not (Test-Path "packages/virtual-thermal-printer/dist")) {
     Write-Host "[*] Building packages (npm run build)..." -ForegroundColor Yellow
     npm run build
