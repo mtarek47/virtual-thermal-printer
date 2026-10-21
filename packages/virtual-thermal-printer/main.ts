@@ -43,7 +43,7 @@ console.log(`App version: ${appVersion}`)
 const { values: flags } = parseArgs({
 	args: process.argv.slice(2),
 	options: {
-		http: { type: 'string', default: '80' },
+		http: { type: 'string', default: '8000' },
 		socket: { type: 'string', default: '9100' },
 		labelSocket: { type: 'string', default: '9101' },
 	},
@@ -57,7 +57,7 @@ function validatePort(portValue: string | number, portName: string): number {
 	return port
 }
 
-const httpPort = validatePort(flags['http'] ?? '80', 'HTTP')
+const httpPort = validatePort(flags['http'] ?? '8000', 'HTTP')
 const socketPort = validatePort(flags['socket'] ?? '9100', 'Socket')
 const labelSocketPort = validatePort(flags['labelSocket'] ?? '9101', 'Label Socket')
 
