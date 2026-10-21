@@ -67,6 +67,9 @@ if (!paperContent) {
 }
 paper.style.width = `${printerWidth + 20}px`
 
+const stickerRoll = document.getElementById('sticker-roll') as HTMLDivElement
+const labelPlaceholder = document.getElementById('label-placeholder') as HTMLDivElement
+
 let socket: WebSocket | undefined
 let reconnectInterval = 1000 // Initial reconnect attempt after 1 second
 let isAutoScrollEnabled = true
@@ -579,12 +582,111 @@ function movePrintPosition(position: number) {
 	}
 }
 
+// ─── Label Sticker Rendering Engine ──────────────────────────────
+
+async function renderLabelSticker(job: any) {
+	if (labelPlaceholder) {
+		labelPlaceholder.classList.add('is-hidden')
+	}
+	if (isSoundEnabled) {
+		beepSound.currentTime = 0
+		beepSound.play().catch(() => {})
+	}
+
+	const copies = Math.max(1, job.copies || 1)
+	const widthDots = job.widthDots || (job.widthMm ? Math.round(job.widthMm * 8) : 320)
+	const heightDots = job.heightDots || (job.heightMm ? Math.round(job.heightMm * 8) : 240)
+	const widthMm = job.widthMm || Math.round(widthDots / 8)
+	const heightMm = job.heightMm || Math.round(heightDots / 8)
+
+	for (let c = 0; c < copies; c++) {
+		const card = document.createElement('div')
+		card.className = 'sticker-card'
+		card.style.maxWidth = `${Math.min(widthDots, 460)}px`
+		card.style.width = '100%'
+
+		if (job.imageBase64) {
+			const img = document.createElement('img')
+			img.src = job.imageBase64.startsWith('data:')
+				? job.imageBase64
+				: `data:image/png;base64,${job.imageBase64}`
+			img.alt = `Sticker ${widthMm}x${heightMm}mm`
+			card.appendChild(img)
+		} else if (job.elements && Array.isArray(job.elements)) {
+			const canvas = document.createElement('canvas')
+			canvas.width = widthDots
+			canvas.height = heightDots
+			const ctx = canvas.getContext('2d')
+			if (ctx) {
+				ctx.fillStyle = '#ffffff'
+				ctx.fillRect(0, 0, widthDots, heightDots)
+				ctx.fillStyle = '#000000'
+				ctx.strokeStyle = '#000000'
+
+				for (const el of job.elements) {
+					if (el.type === 'text') {
+						const fontSize = (el.font === 'TSS24.BF2' ? 24 : el.font === 'TSS16.BF2' ? 16 : 20) * (el.yMult || 1)
+						ctx.font = `bold ${fontSize}px monospace, sans-serif`
+						ctx.textBaseline = 'top'
+						ctx.fillText(el.content || '', el.x, el.y)
+					} else if (el.type === 'box') {
+						ctx.lineWidth = el.thickness || 1
+						const bx = Math.min(el.x, el.xEnd)
+						const by = Math.min(el.y, el.yEnd)
+						const bw = Math.abs(el.xEnd - el.x)
+						const bh = Math.abs(el.yEnd - el.y)
+						ctx.strokeRect(bx, by, bw, bh)
+					} else if (el.type === 'bar') {
+						ctx.fillRect(el.x, el.y, el.width, el.height)
+					} else if (el.type === 'barcode' || el.type === 'qrcode') {
+						if (el.imageBase64) {
+							await new Promise<void>((resolve) => {
+								const img = new Image()
+								img.onload = () => {
+									ctx.drawImage(img, el.x, el.y, el.imageWidth || img.width, el.imageHeight || img.height)
+									resolve()
+								}
+								img.onerror = () => resolve()
+								img.src = el.imageBase64.startsWith('data:')
+									? el.imageBase64
+									: `data:image/png;base64,${el.imageBase64}`
+							})
+						}
+					}
+				}
+			}
+			card.appendChild(canvas)
+		}
+
+		const meta = document.createElement('div')
+		meta.className = 'sticker-meta'
+		meta.innerHTML = `
+			<span class="sticker-tag">${job.protocol || 'LABEL'} • ${widthMm}×${heightMm}mm</span>
+			<span>${job.timestamp || new Date().toLocaleTimeString()}${copies > 1 ? ` (${c + 1}/${copies})` : ''}</span>
+		`
+		card.appendChild(meta)
+
+		if (stickerRoll) {
+			stickerRoll.appendChild(card)
+		}
+	}
+
+	const container = document.getElementById('label-output')
+	if (container) {
+		container.scrollTop = container.scrollHeight
+	}
+}
+
 function connectWebSocket(): void {
 	const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
 	socket = new WebSocket(`${protocol}//${location.host}/stream`)
 
 	socket.onopen = () => {
 		console.log('WebSocket connected.')
+		if (connStatus) {
+			connStatus.textContent = 'Connected'
+			connStatus.className = 'status-badge status-online'
+		}
 		reconnectInterval = 1000 // Reset reconnect interval on successful connection
 		// Clear existing content on successful reconnect
 		while (paperContent.firstChild) {
@@ -599,11 +701,16 @@ function connectWebSocket(): void {
 	}
 
 	socket.onmessage = (event: MessageEvent) => {
+		const raw = JSON.parse(event.data)
+		if (raw && raw.target === 'label') {
+			renderLabelSticker(raw)
+			return
+		}
 		if (isFirstMessage) {
 			placeholderText.classList.add('is-hidden')
 			isFirstMessage = false
 		}
-		const data: ParsedEscPosBlock = JSON.parse(event.data)
+		const data: ParsedEscPosBlock = raw
 		console.log(data)
 
 		if (isEscPosImage(data)) {
@@ -621,8 +728,11 @@ function connectWebSocket(): void {
 		} else if (isEscPosCommand(data)) {
 			// Handle 'Beep' command
 			if (data.name === 'Beep') {
-				console.log('Playing beep sound')
-				beepSound.play()
+				if (isSoundEnabled) {
+					console.log('Playing beep sound')
+					beepSound.currentTime = 0
+					beepSound.play()
+				}
 			} else if (data.name === 'Initialize Printer') {
 				// ESC @ returns to standard mode and discards an unprinted page.
 				if (page) {
@@ -694,6 +804,10 @@ function connectWebSocket(): void {
 				reconnectInterval / 1000
 			} seconds...`,
 		)
+		if (connStatus) {
+			connStatus.textContent = 'Disconnected'
+			connStatus.className = 'status-badge status-offline'
+		}
 		setTimeout(connectWebSocket, reconnectInterval)
 		reconnectInterval = Math.min(reconnectInterval * 2, 30000) // Exponential backoff, max 30 seconds
 	}
@@ -706,6 +820,10 @@ function connectWebSocket(): void {
 	}
 }
 
+// Global state for sound and connection status
+let isSoundEnabled = true
+const connStatus = document.getElementById('conn-status') as HTMLElement | null
+
 // Initial connection
 connectWebSocket()
 
@@ -716,3 +834,228 @@ fetch('/version')
 		if (el) el.textContent = `v${v}`
 	})
 	.catch(() => {})
+
+// ─── Settings Drawer Controller ─────────────────────────────────
+
+const settingsDialog = document.getElementById('settings-dialog') as HTMLDialogElement | null
+const settingsToggle = document.getElementById('settings-toggle') as HTMLButtonElement | null
+const settingsClose = document.getElementById('settings-close') as HTMLButtonElement | null
+
+if (settingsToggle && settingsDialog) {
+	settingsToggle.addEventListener('click', () => {
+		settingsDialog.showModal()
+	})
+}
+
+if (settingsClose && settingsDialog) {
+	settingsClose.addEventListener('click', () => {
+		settingsDialog.close()
+	})
+}
+
+if (settingsDialog) {
+	settingsDialog.addEventListener('click', (e) => {
+		if (e.target === settingsDialog) {
+			settingsDialog.close()
+		}
+	})
+}
+
+// ─── Quick Actions & Test Triggers ─────────────────────────────
+
+async function triggerReceiptTest() {
+	const sampleHex = '1b401b61011b213853414d504c4520524543454950540a1b21005669727475616c20546865726d616c205072696e7465720a2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d0a1b610043617070756363696e6f2020202020202020202020202020202020313830204244540a43726f697373616e742020202020202020202020202020202020313230204244540a2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d0a1b61021b2130544f54414c3a20333030204244540a1b21001b61010a2a2a2a205448414e4b20594f55202a2a2a0a0a0a1d564103'
+	const eposPayload = `<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print"><command>${sampleHex}</command></epos-print></s:Body></s:Envelope>`
+	try {
+		await fetch('/cgi-bin/epos/service.cgi', {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/xml' },
+			body: eposPayload,
+		})
+		settingsDialog?.close()
+	} catch (err) {
+		console.error('Failed to trigger test print:', err)
+	}
+}
+
+async function triggerTsplBarcodeTest() {
+	const sampleTspl = `SIZE 40 mm, 30 mm
+GAP 2 mm, 0 mm
+CLS
+BOX 10,10,310,230,2
+TEXT 25,22,"TSS24.BF2",0,1,1,"SUPER STORE LTD"
+TEXT 25,55,"TSS16.BF2",0,1,1,"PREMIUM ROAST COFFEE"
+BARCODE 30,85,"128",60,1,0,2,2,"PRD-88204"
+TEXT 25,185,"TSS24.BF2",0,1,1,"PRICE: 450 BDT"
+PRINT 1
+`
+	try {
+		await fetch('/cgi-bin/label/tspl', {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/plain' },
+			body: sampleTspl,
+		})
+		settingsDialog?.close()
+	} catch (err) {
+		console.error('Failed to trigger TSPL sticker print:', err)
+	}
+}
+
+async function triggerTsplQrTest() {
+	const sampleTsplQr = `SIZE 40 mm, 30 mm
+GAP 2 mm, 0 mm
+CLS
+BOX 10,10,310,230,2
+TEXT 20,20,"TSS24.BF2",0,1,1,"SMART WIFI CONNECT"
+QRCODE 30,55,L,5,A,0,"WIFI:S:MyCafeGuest;T:WPA;P:Welcome2026;;"
+TEXT 180,75,"TSS16.BF2",0,1,1,"Scan with"
+TEXT 180,105,"TSS16.BF2",0,1,1,"phone camera"
+TEXT 180,135,"TSS16.BF2",0,1,1,"for 5G Wi-Fi"
+TEXT 20,195,"TSS16.BF2",0,1,1,"Pass: Welcome2026"
+PRINT 1
+`
+	try {
+		await fetch('/cgi-bin/label/tspl', {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/plain' },
+			body: sampleTsplQr,
+		})
+		settingsDialog?.close()
+	} catch (err) {
+		console.error('Failed to trigger TSPL QR print:', err)
+	}
+}
+
+async function triggerZplTest() {
+	const sampleZpl = `^XA
+^PW320
+^LL240
+^FO15,15^GB290,210,2^FS
+^FO30,25^A0N,28,28^FDEXPRESS COURIER^FS
+^FO30,60^A0N,20,20^FDTracking: TRACK-994182^FS
+^FO30,95^BCN,60,Y,N,N^FDTRACK994182^FS
+^FO30,190^A0N,22,22^FDWEIGHT: 1.25 KG^FS
+^XZ`
+	try {
+		await fetch('/cgi-bin/label/zpl', {
+			method: 'POST',
+			headers: { 'Content-Type': 'text/plain' },
+			body: sampleZpl,
+		})
+		settingsDialog?.close()
+	} catch (err) {
+		console.error('Failed to trigger ZPL print:', err)
+	}
+}
+
+// Receipt Bay Actions
+document.getElementById('btn-quick-receipt')?.addEventListener('click', triggerReceiptTest)
+
+document.getElementById('btn-quick-clear-receipt')?.addEventListener('click', () => {
+	while (paperContent.firstChild) {
+		paperContent.removeChild(paperContent.firstChild)
+	}
+	placeholderText.classList.remove('is-hidden')
+	isFirstMessage = true
+	openRow = null
+	pendingPosition = null
+	page = null
+	reverseFeed = 0
+})
+
+// Barcode Sticker Bay Actions
+document.getElementById('btn-quick-label-bc')?.addEventListener('click', triggerTsplBarcodeTest)
+document.getElementById('btn-quick-label-qr')?.addEventListener('click', triggerTsplQrTest)
+
+document.getElementById('btn-quick-clear-label')?.addEventListener('click', () => {
+	if (stickerRoll) {
+		while (stickerRoll.firstChild) {
+			stickerRoll.removeChild(stickerRoll.firstChild)
+		}
+	}
+	labelPlaceholder?.classList.remove('is-hidden')
+})
+
+// Settings Dialog Actions
+document.getElementById('btn-clear-paper')?.addEventListener('click', () => {
+	while (paperContent.firstChild) {
+		paperContent.removeChild(paperContent.firstChild)
+	}
+	placeholderText.classList.remove('is-hidden')
+	isFirstMessage = true
+	openRow = null
+	pendingPosition = null
+	page = null
+	reverseFeed = 0
+	window.scrollTo({ top: 0, behavior: 'smooth' })
+	settingsDialog?.close()
+})
+
+document.getElementById('btn-test-print')?.addEventListener('click', triggerReceiptTest)
+document.getElementById('btn-test-sticker-tspl')?.addEventListener('click', triggerTsplBarcodeTest)
+document.getElementById('btn-test-sticker-zpl')?.addEventListener('click', triggerZplTest)
+
+document.getElementById('btn-test-beep')?.addEventListener('click', () => {
+	beepSound.currentTime = 0
+	beepSound.play()
+})
+
+// ─── Settings Toggles ───────────────────────────────────────────
+
+const soundToggle = document.getElementById('setting-sound') as HTMLInputElement | null
+if (soundToggle) {
+	const savedSound = localStorage.getItem('vtp_sound')
+	if (savedSound !== null) {
+		isSoundEnabled = savedSound === 'true'
+		soundToggle.checked = isSoundEnabled
+	}
+	soundToggle.addEventListener('change', () => {
+		isSoundEnabled = soundToggle.checked
+		localStorage.setItem('vtp_sound', String(isSoundEnabled))
+	})
+}
+
+const paperWidthSelect = document.getElementById('setting-paper-width') as HTMLSelectElement | null
+if (paperWidthSelect) {
+	const savedWidth = localStorage.getItem('vtp_width')
+	if (savedWidth) {
+		paperWidthSelect.value = savedWidth
+		const w = savedWidth === '58' ? 384 : 576
+		paper.style.width = `${w + 20}px`
+	}
+	paperWidthSelect.addEventListener('change', () => {
+		const w = paperWidthSelect.value === '58' ? 384 : 576
+		paper.style.width = `${w + 20}px`
+		localStorage.setItem('vtp_width', paperWidthSelect.value)
+	})
+}
+
+const autoscrollToggle = document.getElementById('setting-autoscroll') as HTMLInputElement | null
+if (autoscrollToggle) {
+	autoscrollToggle.addEventListener('change', () => {
+		isAutoScrollEnabled = autoscrollToggle.checked
+	})
+}
+
+// ─── Copy Buttons ───────────────────────────────────────────────
+
+document.querySelectorAll<HTMLButtonElement>('.btn-copy').forEach((btn) => {
+	btn.addEventListener('click', () => {
+		const targetId = btn.getAttribute('data-copy-target')
+		let text = btn.getAttribute('data-copy') || ''
+		if (targetId) {
+			text = document.getElementById(targetId)?.textContent || ''
+		}
+		if (text) {
+			navigator.clipboard.writeText(text).then(() => {
+				const orig = btn.textContent
+				btn.textContent = '✓ Copied'
+				btn.classList.add('copied')
+				setTimeout(() => {
+					btn.textContent = orig
+					btn.classList.remove('copied')
+				}, 1800)
+			})
+		}
+	})
+})

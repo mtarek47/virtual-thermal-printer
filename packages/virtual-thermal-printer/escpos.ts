@@ -1,6 +1,11 @@
 import { Readable } from 'node:stream'
 import type { Socket } from 'node:net'
 import { EscPosTransformer } from 'escpos-decoder'
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { PNG } from 'pngjs'
 
 const ESC = 0x1b
 const INITIALIZE_PRINTER = 0x40 // '@' - the byte after ESC in "ESC @"
@@ -123,6 +128,113 @@ export async function processEscPosStream(
 	}
 }
 
+async function handleDocumentStream(
+	socket: Socket,
+	firstChunk: Buffer,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	connectedClients: Set<any>,
+) {
+	const chunks: Buffer[] = [firstChunk]
+	const remoteAddressString = socket.remoteAddress && socket.remotePort
+		? `${socket.remoteAddress}:${socket.remotePort}`
+		: 'unknown'
+
+	console.log(`Receiving print document (PDF/PS) from ${remoteAddressString}...`)
+
+	socket.on('data', (chunk: Buffer) => {
+		chunks.push(chunk)
+	})
+
+	await new Promise<void>((resolve) => {
+		socket.on('end', () => resolve())
+		socket.on('close', () => resolve())
+		socket.on('error', () => resolve())
+	})
+
+	const fullBuffer = Buffer.concat(chunks)
+	if (fullBuffer.length === 0) return
+
+	const tempBase = join(tmpdir(), `vtp-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+	const isPdf = fullBuffer.subarray(0, 4).toString() === '%PDF'
+	const pdfPath = `${tempBase}.pdf`
+	const pngPath = `${tempBase}.png`
+
+	try {
+		if (isPdf) {
+			writeFileSync(pdfPath, fullBuffer)
+		} else {
+			const psPath = `${tempBase}.ps`
+			writeFileSync(psPath, fullBuffer)
+			try {
+				execSync(`cupsfilter -m application/pdf "${psPath}" > "${pdfPath}" 2>/dev/null`)
+			} catch {
+				writeFileSync(pdfPath, fullBuffer)
+			}
+			try { unlinkSync(psPath) } catch {}
+		}
+
+		if (existsSync(pdfPath)) {
+			// Convert PDF to PNG resampled to 512px width
+			execSync(`sips -s format png --resampleWidth 512 "${pdfPath}" --out "${pngPath}" 2>/dev/null`)
+
+			if (existsSync(pngPath)) {
+				const pngBuf = readFileSync(pngPath)
+				const originalPng = PNG.sync.read(pngBuf)
+
+				// Trim bottom whitespace
+				let lastNonWhiteY = originalPng.height - 1
+				for (let y = originalPng.height - 1; y >= 0; y--) {
+					let hasContent = false
+					for (let x = 0; x < originalPng.width; x++) {
+						const idx = (originalPng.width * y + x) << 2
+						const r = originalPng.data[idx]
+						const g = originalPng.data[idx + 1]
+						const b = originalPng.data[idx + 2]
+						const a = originalPng.data[idx + 3]
+						if (a > 10 && (r < 245 || g < 245 || b < 245)) {
+							hasContent = true
+							break
+						}
+					}
+					if (hasContent) {
+						lastNonWhiteY = Math.min(originalPng.height - 1, y + 20)
+						break
+					}
+				}
+
+				const trimmedHeight = Math.max(50, lastNonWhiteY + 1)
+				const trimmedPng = new PNG({ width: originalPng.width, height: trimmedHeight })
+				originalPng.data.copy(trimmedPng.data, 0, 0, originalPng.width * trimmedHeight * 4)
+				const finalPngBuf = PNG.sync.write(trimmedPng)
+
+				const imageBlock = {
+					type: 'image',
+					width: trimmedPng.width,
+					height: trimmedPng.height,
+					base64: `data:image/png;base64,${finalPngBuf.toString('base64')}`,
+					alignment: 1, // center
+				}
+				const cutBlock = {
+					type: 'command',
+					name: 'Cut Paper',
+				}
+
+				console.log(`Document rendered to ${trimmedPng.width}x${trimmedPng.height} receipt image.`)
+
+				for (const client of connectedClients) {
+					client.send(JSON.stringify(imageBlock))
+					client.send(JSON.stringify(cutBlock))
+				}
+			}
+		}
+	} catch (err) {
+		console.error('Failed to process print document:', err)
+	} finally {
+		try { unlinkSync(pdfPath) } catch {}
+		try { unlinkSync(pngPath) } catch {}
+	}
+}
+
 export async function handleConnection(
 	socket: Socket,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,28 +245,38 @@ export async function handleConnection(
 		: 'unknown'
 	console.log(`New connection from ${remoteAddressString}.`)
 
-	try {
-		const readable = Readable.toWeb(socket) as ReadableStream<Uint8Array>
-		await processEscPosStream(
-			readable.pipeThrough(
-				new TransformStream(new ProbeFilterTransformer()),
-			),
-			connectedClients,
-		)
-	} catch (error) {
-		if (!(error instanceof Error && error.message.includes('terminate'))) {
-			console.error(
-				`Error handling connection from ${remoteAddressString}:`,
-				error,
-			)
-		}
-	} finally {
+	socket.once('data', async (firstChunk: Buffer) => {
 		try {
-			socket.destroy()
-		} catch (_error) {
-			// Socket might already be closed
+			if (
+				firstChunk.length >= 2 &&
+				firstChunk[0] === 0x25 && // '%'
+				(firstChunk[1] === 0x21 || firstChunk[1] === 0x50) // '!' or 'P'
+			) {
+				await handleDocumentStream(socket, firstChunk, connectedClients)
+			} else {
+				socket.unshift(firstChunk)
+				const readable = Readable.toWeb(socket) as ReadableStream<Uint8Array>
+				await processEscPosStream(
+					readable.pipeThrough(
+						new TransformStream(new ProbeFilterTransformer()),
+					),
+					connectedClients,
+				)
+			}
+		} catch (error) {
+			if (!(error instanceof Error && error.message.includes('terminate'))) {
+				console.error(
+					`Error handling connection from ${remoteAddressString}:`,
+					error,
+				)
+			}
+		} finally {
+			try {
+				socket.destroy()
+			} catch (_error) {
+				// Socket might already be closed
+			}
+			console.log(`Connection from ${remoteAddressString} closed.`)
 		}
-	}
-
-	console.log(`Connection from ${remoteAddressString} closed.`)
+	})
 }

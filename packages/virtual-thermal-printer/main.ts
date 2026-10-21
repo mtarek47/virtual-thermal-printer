@@ -11,6 +11,11 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { isSea, getAsset } from 'node:sea'
 import { handleConnection, processEscPosStream } from './escpos.js'
+import {
+	handleLabelConnection,
+	processTsplStream,
+	processZplStream,
+} from './label_engine.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -40,6 +45,7 @@ const { values: flags } = parseArgs({
 	options: {
 		http: { type: 'string', default: '80' },
 		socket: { type: 'string', default: '9100' },
+		labelSocket: { type: 'string', default: '9101' },
 	},
 })
 
@@ -53,6 +59,7 @@ function validatePort(portValue: string | number, portName: string): number {
 
 const httpPort = validatePort(flags['http'] ?? '80', 'HTTP')
 const socketPort = validatePort(flags['socket'] ?? '9100', 'Socket')
+const labelSocketPort = validatePort(flags['labelSocket'] ?? '9101', 'Label Socket')
 
 const app = new Hono()
 
@@ -88,6 +95,43 @@ app.post(eposEndpoint, async (context) => {
 		200,
 		{ 'Content-Type': 'text/xml' },
 	)
+})
+
+// Barcode Sticker / Label Printer Endpoints (TSPL / ZPL / JSON)
+const labelEndpoint = '/cgi-bin/label/print'
+app.use(labelEndpoint, cors())
+app.post(labelEndpoint, async (context) => {
+	const body = await context.req.text()
+	try {
+		const json = JSON.parse(body)
+		if (json.protocol === 'zpl' || (typeof json.data === 'string' && json.data.includes('^XA'))) {
+			await processZplStream(json.data || '', connectedClients)
+		} else {
+			await processTsplStream(json.data || json.tspl || body, connectedClients)
+		}
+		return context.json({ success: true, message: 'Label print job processed' })
+	} catch {
+		if (body.includes('^XA') || body.includes('^xa')) {
+			await processZplStream(body, connectedClients)
+		} else {
+			await processTsplStream(body, connectedClients)
+		}
+		return context.json({ success: true, message: 'Raw label script processed' })
+	}
+})
+
+app.use('/cgi-bin/label/tspl', cors())
+app.post('/cgi-bin/label/tspl', async (context) => {
+	const body = await context.req.text()
+	await processTsplStream(body, connectedClients)
+	return context.text('OK\n')
+})
+
+app.use('/cgi-bin/label/zpl', cors())
+app.post('/cgi-bin/label/zpl', async (context) => {
+	const body = await context.req.text()
+	await processZplStream(body, connectedClients)
+	return context.text('OK\n')
 })
 
 if (isSea()) {
@@ -164,4 +208,11 @@ const escposServer = createServer((socket) => {
 })
 escposServer.listen(socketPort, '0.0.0.0', () => {
 	console.log(`Listening to Socket on port ${socketPort}.`)
+})
+
+const labelServer = createServer((socket) => {
+	handleLabelConnection(socket, connectedClients)
+})
+labelServer.listen(labelSocketPort, '0.0.0.0', () => {
+	console.log(`Listening to Label Socket on port ${labelSocketPort}.`)
 })

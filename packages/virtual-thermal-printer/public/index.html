@@ -3,7 +3,7 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Virtual Thermal Printer</title>
+		<title>Virtual POS & Barcode Sticker Printers</title>
 		<meta name="color-scheme" content="light dark" />
 		<meta
 			name="theme-color"
@@ -21,21 +21,202 @@
 		<script type="module" src="script.js"></script>
 	</head>
 	<body>
-		<span id="version"></span>
-		<div class="content">
-			<div id="printer-output">
-				<div class="placeholder">
-					<h1>Virtual Thermal Printer</h1>
-					<div class="placeholder-surface">
-						<img src="/icons/original.png" alt="" width="507" height="431" />
-						<p id="placeholder-text">Waiting for instructions…</p>
-					</div>
-				</div>
-				<div class="paper">
-					<div class="paper-content"></div>
+		<header class="app-topbar">
+			<div class="topbar-brand">
+				<span class="brand-icon">🖨️</span>
+				<div>
+					<h1>Virtual Printer Suite</h1>
+					<p class="brand-subtitle">Dual Thermal Engine: POS Receipt & Barcode Sticker</p>
 				</div>
 			</div>
-		</div>
+			<div class="topbar-actions">
+				<button id="settings-toggle" class="settings-btn" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-label="Open Printer Settings">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+						<circle cx="12" cy="12" r="3"/>
+					</svg>
+					<span>Settings</span>
+				</button>
+			</div>
+		</header>
+
+		<main class="dual-workspace">
+			<!-- ─── BAY 1: THERMAL RECEIPT PRINTER ──────────────────────── -->
+			<section class="printer-bay" id="bay-receipt">
+				<header class="bay-header">
+					<div class="bay-title-wrap">
+						<span class="bay-badge-icon">🧾</span>
+						<div>
+							<h2>Receipt Printer</h2>
+							<span class="bay-subtag">ESC/POS • Port 9100</span>
+						</div>
+					</div>
+					<div class="bay-quick-actions">
+						<button id="btn-quick-receipt" type="button" class="pill-btn pill-primary" title="Print Sample Café Receipt">🧾 Test Receipt</button>
+						<button id="btn-quick-clear-receipt" type="button" class="pill-btn pill-ghost" title="Clear Receipt Roll">Clear</button>
+					</div>
+				</header>
+
+				<div class="hardware-casing">
+					<div class="printer-slit">
+						<div class="status-led led-green" title="Printer Ready"></div>
+						<div class="slot-cutout"></div>
+					</div>
+
+					<div id="printer-output" class="printer-stage">
+						<div class="placeholder receipt-placeholder">
+							<div class="placeholder-surface">
+								<img src="/icons/original.png" alt="Thermal Printer" width="220" height="186" />
+								<p id="placeholder-text">Waiting for ESC/POS / ePOS...</p>
+							</div>
+						</div>
+						<div class="paper">
+							<div class="paper-content"></div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- ─── BAY 2: BARCODE STICKER PRINTER ──────────────────────── -->
+			<section class="printer-bay" id="bay-label">
+				<header class="bay-header">
+					<div class="bay-title-wrap">
+						<span class="bay-badge-icon">🏷️</span>
+						<div>
+							<h2>Barcode Sticker Printer</h2>
+							<span class="bay-subtag">TSPL / ZPL • Port 9101</span>
+						</div>
+					</div>
+					<div class="bay-quick-actions">
+						<button id="btn-quick-label-bc" type="button" class="pill-btn pill-primary" title="Test 40×30mm Barcode Sticker">🏷️ 1D Barcode</button>
+						<button id="btn-quick-label-qr" type="button" class="pill-btn pill-accent" title="Test QR Code Sticker">📱 QR Code</button>
+						<button id="btn-quick-clear-label" type="button" class="pill-btn pill-ghost" title="Clear Sticker Roll">Clear</button>
+					</div>
+				</header>
+
+				<div class="hardware-casing label-casing">
+					<div class="printer-slit label-slit">
+						<div class="status-led led-blue" title="Label Engine Ready"></div>
+						<div class="slot-cutout"></div>
+					</div>
+
+					<div id="label-output" class="printer-stage label-stage">
+						<div class="placeholder label-placeholder" id="label-placeholder">
+							<div class="placeholder-surface label-surface">
+								<div class="label-mock-icon">🏷️</div>
+								<p id="label-placeholder-text">Waiting for TSPL / ZPL / Label print...</p>
+							</div>
+						</div>
+						<div class="sticker-roll-container">
+							<div class="sticker-roll" id="sticker-roll"></div>
+						</div>
+					</div>
+				</div>
+			</section>
+		</main>
+
+		<!-- ─── SETTINGS MODAL DRAWER ─────────────────────────────────── -->
+		<dialog id="settings-dialog" class="settings-dialog">
+			<div class="settings-panel">
+				<header class="settings-header">
+					<div class="settings-title-group">
+						<h2>Printer Suite Settings</h2>
+						<span id="conn-status" class="status-badge status-online">Connected</span>
+					</div>
+					<button id="settings-close" class="close-btn" type="button" aria-label="Close Settings">✕</button>
+				</header>
+
+				<div class="settings-body">
+					<!-- Quick Test Actions -->
+					<section class="settings-section">
+						<h3>Quick Test Prints</h3>
+						<div class="action-grid-dual">
+							<button id="btn-test-print" type="button" class="btn btn-primary">
+								🧾 Test Receipt
+							</button>
+							<button id="btn-test-sticker-tspl" type="button" class="btn btn-accent">
+								🏷️ Test TSPL Sticker
+							</button>
+							<button id="btn-test-sticker-zpl" type="button" class="btn btn-accent">
+								🏷️ Test ZPL Sticker
+							</button>
+							<button id="btn-test-beep" type="button" class="btn btn-secondary">
+								🔔 Test Beep
+							</button>
+						</div>
+					</section>
+
+					<!-- Hardware & Paper Configuration -->
+					<section class="settings-section">
+						<h3>Hardware Configuration</h3>
+						<div class="setting-row">
+							<label for="setting-paper-width">Receipt Roll Width</label>
+							<select id="setting-paper-width" class="select-input">
+								<option value="80" selected>80 mm (Standard - 576 dots)</option>
+								<option value="58">58 mm (Compact - 384 dots)</option>
+							</select>
+						</div>
+						<div class="setting-row">
+							<label for="setting-sound">Print Sound (Beep)</label>
+							<input type="checkbox" id="setting-sound" checked class="toggle-checkbox" />
+						</div>
+						<div class="setting-row">
+							<label for="setting-autoscroll">Auto-scroll to Latest</label>
+							<input type="checkbox" id="setting-autoscroll" checked class="toggle-checkbox" />
+						</div>
+					</section>
+
+					<!-- Receipt Printer Endpoints -->
+					<section class="settings-section">
+						<h3>🧾 Receipt Printer Endpoints</h3>
+						<div class="endpoint-item">
+							<div class="endpoint-meta">
+								<span class="endpoint-label">ESC/POS (Raw TCP Socket)</span>
+								<code class="endpoint-val">127.0.0.1:9100</code>
+							</div>
+							<button type="button" class="btn-copy" data-copy="127.0.0.1:9100" title="Copy Host:Port">Copy</button>
+						</div>
+						<div class="endpoint-item">
+							<div class="endpoint-meta">
+								<span class="endpoint-label">Epson ePOS (HTTP XML)</span>
+								<code class="endpoint-val">http://localhost:8000/cgi-bin/epos/service.cgi</code>
+							</div>
+							<button type="button" class="btn-copy" data-copy="http://localhost:8000/cgi-bin/epos/service.cgi" title="Copy URL">Copy</button>
+						</div>
+						<div class="code-box">
+							<span class="code-box-title">macOS Setup (Receipt Printer):</span>
+							<code id="mac-cmd-receipt">lpadmin -p "Virtual_Thermal_Printer" -E -v "socket://127.0.0.1:9100" -D "Virtual Thermal Printer" -L "Localhost" -P "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/PrintCore.framework/Versions/A/Resources/GenericPrinter.ppd" && cupsenable Virtual_Thermal_Printer</code>
+							<button type="button" class="btn-copy" data-copy-target="mac-cmd-receipt" title="Copy Command">Copy Command</button>
+						</div>
+					</section>
+
+					<!-- Label Printer Endpoints -->
+					<section class="settings-section">
+						<h3>🏷️ Barcode Sticker Printer Endpoints</h3>
+						<div class="endpoint-item">
+							<div class="endpoint-meta">
+								<span class="endpoint-label">TSPL / ZPL / Label (TCP Socket)</span>
+								<code class="endpoint-val">127.0.0.1:9101</code>
+							</div>
+							<button type="button" class="btn-copy" data-copy="127.0.0.1:9101" title="Copy Host:Port">Copy</button>
+						</div>
+						<div class="endpoint-item">
+							<div class="endpoint-meta">
+								<span class="endpoint-label">Label Print API (HTTP JSON / Raw)</span>
+								<code class="endpoint-val">http://localhost:8000/cgi-bin/label/print</code>
+							</div>
+							<button type="button" class="btn-copy" data-copy="http://localhost:8000/cgi-bin/label/print" title="Copy URL">Copy</button>
+						</div>
+						<div class="code-box">
+							<span class="code-box-title">macOS Setup (Barcode Sticker Printer):</span>
+							<code id="mac-cmd-label">lpadmin -p "Virtual_Label_Printer" -E -v "socket://127.0.0.1:9101" -D "Virtual Barcode Label Printer" -L "Localhost" -P "/System/Library/Frameworks/ApplicationServices.framework/Versions/A/Frameworks/PrintCore.framework/Versions/A/Resources/GenericPrinter.ppd" && cupsenable Virtual_Label_Printer</code>
+							<button type="button" class="btn-copy" data-copy-target="mac-cmd-label" title="Copy Command">Copy Command</button>
+						</div>
+					</section>
+				</div>
+			</div>
+		</dialog>
+
 		<script>
 			if ('serviceWorker' in navigator) {
 				window.addEventListener('load', () => {
