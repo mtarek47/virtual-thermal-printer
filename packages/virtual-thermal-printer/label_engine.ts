@@ -296,7 +296,7 @@ export async function processTsplStream(
 		// PRINT m[, n]
 		const printMatch = line.match(/^PRINT\s+(\d+)(?:\s*,\s*(\d+))?/i)
 		if (printMatch) {
-			const copies = Math.min(20, Math.max(1, parseInt(printMatch[1]) || 1))
+			const copies = Math.min(500, Math.max(1, parseInt(printMatch[1]) || 1))
 			const stickerJob: LabelStickerJob = {
 				target: 'label',
 				type: 'label_item',
