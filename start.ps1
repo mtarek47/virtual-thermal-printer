@@ -35,4 +35,4 @@ Write-Host "-------------------------------------------------------" -Foreground
 
 Start-Process "http://localhost:8000"
 
-npm run dev --workspace=packages/virtual-thermal-printer
+npm run start --workspace=packages/virtual-thermal-printer

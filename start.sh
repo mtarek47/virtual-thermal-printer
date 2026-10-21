@@ -54,4 +54,4 @@ echo -e "${CYAN}-------------------------------------------------------${NC}"
 ) &
 
 echo -e "${GREEN}🚀 Server is running! Press Ctrl+C to stop.${NC}"
-npm run dev --workspace=packages/virtual-thermal-printer
+npm run start --workspace=packages/virtual-thermal-printer

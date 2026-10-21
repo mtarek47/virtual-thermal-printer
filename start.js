@@ -47,20 +47,20 @@ setTimeout(() => {
 	try {
 		const url = 'http://localhost:8000'
 		if (isMac) {
-			execSync(`open ${url}`, { stdio: 'ignore' })
+			execSync(`open "${url}"`, { stdio: 'ignore', shell: true })
 		} else if (isWindows) {
-			execSync(`start ${url}`, { stdio: 'ignore' })
+			execSync(`start "" "${url}"`, { stdio: 'ignore', shell: true })
 		} else if (isLinux) {
-			execSync(`xdg-open ${url}`, { stdio: 'ignore' })
+			execSync(`xdg-open "${url}"`, { stdio: 'ignore', shell: true })
 		}
 	} catch {}
-}, 2500)
+}, 1500)
 
 // 4. Start server
 console.log('🚀 Starting printer server...')
 const child = spawn(
 	npmCmd,
-	['run', 'dev', '--workspace=packages/virtual-thermal-printer'],
+	['run', 'start', '--workspace=packages/virtual-thermal-printer'],
 	{
 		stdio: 'inherit',
 		shell: true,

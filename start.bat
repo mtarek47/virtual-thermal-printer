@@ -42,7 +42,7 @@ echo.
 
 start "" "http://localhost:8000"
 
-echo Server is starting... Press Ctrl+C to stop.
+echo Server is running! Press Ctrl+C to stop.
 echo.
-call npm run dev --workspace=packages/virtual-thermal-printer
+call npm run start --workspace=packages/virtual-thermal-printer
 pause
