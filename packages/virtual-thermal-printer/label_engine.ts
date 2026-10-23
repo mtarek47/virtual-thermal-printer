@@ -193,8 +193,8 @@ export async function processTsplStream(
 				const png = await bwipjs.toBuffer({
 					bcid,
 					text: content,
-					scale: 2,
-					height: Math.round(height / 6),
+					scale: Math.max(1, Math.min(3, narrow)),
+					height: Math.max(12, Math.round(height / 2.8)),
 					includetext: humanReadable,
 					textxalign: 'center',
 				})
