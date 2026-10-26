@@ -40,6 +40,10 @@ echo   Barcode Label Port:   9101 (TSPL / ZPL / CUPS)
 echo -------------------------------------------------------
 echo.
 
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000 ^| findstr LISTENING 2^>nul') do taskkill /f /pid %%a >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :9100 ^| findstr LISTENING 2^>nul') do taskkill /f /pid %%a >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :9101 ^| findstr LISTENING 2^>nul') do taskkill /f /pid %%a >nul 2>&1
+
 start "" "http://localhost:8000"
 
 echo Server is running! Press Ctrl+C to stop.

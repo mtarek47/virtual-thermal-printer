@@ -17,6 +17,34 @@ console.log('  🧾 Receipt Port:        9100 (ESC/POS / ePOS)')
 console.log('  🏷️  Barcode Label Port:  9101 (TSPL / ZPL / CUPS)')
 console.log('\x1b[36m%s\x1b[0m', '-------------------------------------------------------')
 
+// 0. Ensure ports 8000, 9100, 9101 are not blocked by stale processes
+function freePorts(ports) {
+	for (const port of ports) {
+		try {
+			if (isWindows) {
+				const output = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] })
+				for (const line of output.trim().split('\n')) {
+					const parts = line.trim().split(/\s+/)
+					const pid = parts[parts.length - 1]
+					if (pid && !isNaN(pid) && pid !== '0' && pid !== String(process.pid)) {
+						execSync(`taskkill /F /PID ${pid}`, { stdio: 'ignore' })
+					}
+				}
+			} else {
+				const output = execSync(`lsof -ti :${port}`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+				if (output) {
+					for (const pid of output.split('\n')) {
+						if (pid && pid !== String(process.pid)) {
+							execSync(`kill -9 ${pid}`, { stdio: 'ignore' })
+						}
+					}
+				}
+			}
+		} catch {}
+	}
+}
+freePorts([8000, 9100, 9101])
+
 // 1. Check node_modules
 if (!existsSync('node_modules')) {
 	console.log('📦 Installing dependencies (npm install)...')

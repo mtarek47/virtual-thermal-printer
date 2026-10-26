@@ -33,6 +33,8 @@ Write-Host "  🧾 Receipt Port:        9100 (ESC/POS / ePOS)" -ForegroundColor 
 Write-Host "  🏷️  Barcode Label Port:  9101 (TSPL / ZPL / CUPS)" -ForegroundColor Green
 Write-Host "-------------------------------------------------------" -ForegroundColor Cyan
 
+Get-NetTCPConnection -LocalPort 8000, 9100, 9101 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+
 Start-Process "http://localhost:8000"
 
 npm run start --workspace=packages/virtual-thermal-printer

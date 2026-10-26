@@ -26,6 +26,16 @@ fi
 NODE_VERSION=$(node -v)
 echo -e "Node.js Version: ${GREEN}${NODE_VERSION}${NC}"
 
+# Free ports 8000, 9100, 9101 if occupied by stale processes
+for PORT in 8000 9100 9101; do
+    PIDS=$(lsof -ti :$PORT 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        for PID in $PIDS; do
+            kill -9 "$PID" 2>/dev/null || true
+        done
+    fi
+done
+
 # Install dependencies if missing
 if [ ! -d "node_modules" ]; then
     echo -e "${CYAN}📦 Installing dependencies...${NC}"
