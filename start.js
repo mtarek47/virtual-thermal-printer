@@ -13,7 +13,7 @@ console.log('\x1b[36m%s\x1b[0m', '==============================================
 console.log('\x1b[1m\x1b[32m%s\x1b[0m', '   🖨️  Virtual Thermal & Barcode Label Printer Suite')
 console.log('\x1b[36m%s\x1b[0m', '=======================================================')
 console.log('  🌐 Web Interface:      http://localhost:8000')
-console.log('  🧾 Receipt Port:        9100 (ESC/POS / ePOS)')
+console.log('  🧾 Receipt Port:        9100 (ESC/POS / ePOS, fallback: 9102)')
 console.log('  🏷️  Barcode Label Port:  9101 (TSPL / ZPL / CUPS)')
 console.log('\x1b[36m%s\x1b[0m', '-------------------------------------------------------')
 

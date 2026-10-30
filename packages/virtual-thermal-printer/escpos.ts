@@ -117,7 +117,13 @@ export async function processEscPosStream(
 
 				const dataToSend = JSON.stringify(block)
 				for (const client of connectedClients) {
-					client.send(dataToSend)
+					if (client.readyState === 1 /* OPEN */) {
+						try {
+							client.send(dataToSend)
+						} catch (sendErr) {
+							console.warn('WebSocket send error:', sendErr)
+						}
+					}
 				}
 			}
 		} finally {

@@ -1,11 +1,6 @@
 @echo off
-title Virtual Thermal & Barcode Label Printer Suite
+title Virtual Thermal Printer Suite
 cd /d "%~dp0"
-
-echo =======================================================
-echo    Virtual Thermal & Barcode Label Printer Suite
-echo =======================================================
-echo.
 
 where node >nul 2>nul
 if %errorlevel% neq 0 (
@@ -14,39 +9,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-if not exist "node_modules\" (
-    echo [*] Installing dependencies (npm install)...
-    call npm install
-    if %errorlevel% neq 0 (
-        echo [ERROR] npm install failed!
-        pause
-        exit /b 1
-    )
+node start.js %*
+
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Server exited with an error.
+    pause
 )
-
-if not exist "node_modules\@esbuild\win32-x64\" (
-    echo [*] Ensuring Windows esbuild binary is installed...
-    call npm install @esbuild/win32-x64@0.24.2 --no-save
-)
-
-if not exist "packages\virtual-thermal-printer\dist\" (
-    echo [*] Building packages (npm run build)...
-    call npm run build
-)
-
-echo   Web Interface:       http://localhost:8000
-echo   Receipt Port:         9100 (ESC/POS / ePOS)
-echo   Barcode Label Port:   9101 (TSPL / ZPL / CUPS)
-echo -------------------------------------------------------
-echo.
-
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000 ^| findstr LISTENING 2^>nul') do taskkill /f /pid %%a >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :9100 ^| findstr LISTENING 2^>nul') do taskkill /f /pid %%a >nul 2>&1
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :9101 ^| findstr LISTENING 2^>nul') do taskkill /f /pid %%a >nul 2>&1
-
-start "" "http://localhost:8000"
-
-echo Server is running! Press Ctrl+C to stop.
-echo.
-call npm run start --workspace=packages/virtual-thermal-printer
-pause

@@ -15,21 +15,21 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 
 if (-not (Test-Path "node_modules")) {
     Write-Host "[*] Installing dependencies (npm install)..." -ForegroundColor Yellow
-    npm install
+    npm.cmd install
 }
 
 if (-not (Test-Path "node_modules/@esbuild/win32-x64")) {
     Write-Host "[*] Ensuring Windows esbuild binary is installed..." -ForegroundColor Yellow
-    npm install @esbuild/win32-x64@0.24.2 --no-save
+    npm.cmd install @esbuild/win32-x64@0.24.2 --no-save
 }
 
 if (-not (Test-Path "packages/virtual-thermal-printer/dist")) {
     Write-Host "[*] Building packages (npm run build)..." -ForegroundColor Yellow
-    npm run build
+    npm.cmd run build
 }
 
 Write-Host "  🌐 Web Interface:      http://localhost:8000" -ForegroundColor Green
-Write-Host "  🧾 Receipt Port:        9100 (ESC/POS / ePOS)" -ForegroundColor Green
+Write-Host "  🧾 Receipt Port:        9100 (ESC/POS / ePOS, fallback 9102)" -ForegroundColor Green
 Write-Host "  🏷️  Barcode Label Port:  9101 (TSPL / ZPL / CUPS)" -ForegroundColor Green
 Write-Host "-------------------------------------------------------" -ForegroundColor Cyan
 
@@ -37,4 +37,4 @@ Get-NetTCPConnection -LocalPort 8000, 9100, 9101 -ErrorAction SilentlyContinue |
 
 Start-Process "http://localhost:8000"
 
-npm run start --workspace=packages/virtual-thermal-printer
+npm.cmd run start --workspace=packages/virtual-thermal-printer

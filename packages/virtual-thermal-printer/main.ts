@@ -203,16 +203,50 @@ wss.on('connection', (ws) => {
 	})
 })
 
+server.on('error', (err: any) => {
+	console.error('HTTP server error:', err)
+})
+
 const escposServer = createServer((socket) => {
 	handleConnection(socket, connectedClients)
 })
-escposServer.listen(socketPort, '0.0.0.0', () => {
-	console.log(`Listening to Socket on port ${socketPort}.`)
+let actualSocketPort = socketPort
+escposServer.on('error', (err: any) => {
+	if (err.code === 'EADDRINUSE') {
+		console.warn(`⚠️ Warning: Port ${actualSocketPort} is already in use by another program or service (e.g. POS Printer Emulator).`)
+		if (actualSocketPort === socketPort && socketPort === 9100) {
+			actualSocketPort = 9102
+			console.log(`🔄 Retrying ESC/POS raw socket server on fallback port ${actualSocketPort}...`)
+			escposServer.listen(actualSocketPort, '0.0.0.0')
+		} else {
+			console.warn(`⚠️ ESC/POS raw socket listener could not be bound, but HTTP Web UI & ePOS API (port ${httpPort}) remain active!`)
+		}
+	} else {
+		console.error('ESC/POS server error:', err)
+	}
+})
+escposServer.listen(actualSocketPort, '0.0.0.0', () => {
+	console.log(`Listening to Socket on port ${actualSocketPort}.`)
 })
 
 const labelServer = createServer((socket) => {
 	handleLabelConnection(socket, connectedClients)
 })
-labelServer.listen(labelSocketPort, '0.0.0.0', () => {
-	console.log(`Listening to Label Socket on port ${labelSocketPort}.`)
+let actualLabelPort = labelSocketPort
+labelServer.on('error', (err: any) => {
+	if (err.code === 'EADDRINUSE') {
+		console.warn(`⚠️ Warning: Port ${actualLabelPort} is already in use by another process.`)
+		if (actualLabelPort === labelSocketPort && labelSocketPort === 9101) {
+			actualLabelPort = 9103
+			console.log(`🔄 Retrying Label socket server on fallback port ${actualLabelPort}...`)
+			labelServer.listen(actualLabelPort, '0.0.0.0')
+		} else {
+			console.warn(`⚠️ Label socket listener could not be bound, but HTTP Web UI & Label API remain active!`)
+		}
+	} else {
+		console.error('Label server error:', err)
+	}
+})
+labelServer.listen(actualLabelPort, '0.0.0.0', () => {
+	console.log(`Listening to Label Socket on port ${actualLabelPort}.`)
 })
