@@ -31,6 +31,7 @@ if (-not (Test-Path "packages/virtual-thermal-printer/dist")) {
 Write-Host "  🌐 Web Interface:      http://localhost:8000" -ForegroundColor Green
 Write-Host "  🧾 Receipt Port:        9100 (ESC/POS / ePOS, fallback 9102)" -ForegroundColor Green
 Write-Host "  🏷️  Barcode Label Port:  9101 (TSPL / ZPL / CUPS)" -ForegroundColor Green
+Write-Host "  🗄️  Smart Cash Drawer:   Integrated (Pin 2/5 • UPOS • 24V Solenoid)" -ForegroundColor Green
 Write-Host "-------------------------------------------------------" -ForegroundColor Cyan
 
 Get-NetTCPConnection -LocalPort 8000, 9100, 9101 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }

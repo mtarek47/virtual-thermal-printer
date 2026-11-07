@@ -1,5 +1,5 @@
 @echo off
-title Virtual Thermal Printer Suite
+title Virtual Thermal & Barcode Label Printer Suite
 cd /d "%~dp0"
 
 where node >nul 2>nul

@@ -28,11 +28,12 @@ describe('web render integration test', () => {
 	beforeAll(async () => {
 		const httpPort = `${5000 + Math.floor(Math.random() * 1000)}`
 		const socketPort = `${6000 + Math.floor(Math.random() * 1000)}`
+		const labelSocketPort = `${7000 + Math.floor(Math.random() * 1000)}`
 		baseUrl = `http://127.0.0.1:${httpPort}`
 
 		serverProcess = spawn(
 			process.execPath,
-			['--import', 'tsx/esm', '--conditions=source', join(__dirname, 'main.ts'), '--http', httpPort, '--socket', socketPort],
+			['--import', 'tsx/esm', '--conditions=source', join(__dirname, 'main.ts'), '--http', httpPort, '--socket', socketPort, '--labelSocket', labelSocketPort],
 			{ stdio: 'inherit' },
 		)
 

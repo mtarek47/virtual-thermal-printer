@@ -428,6 +428,14 @@ export async function parseEscPos(
 	}
 
 	switch (firstByte) {
+		case 0x07: // BEL - Star Micronics Cash Drawer Kick 1 (Pin 2)
+			parsedBlock = {
+				type: 'command',
+				name: 'Generate Pulse',
+				details: { mode: 0, pin: 2, drawer: 1, pulseMs: 200, protocol: 'Star Micronics (BEL)' },
+			}
+			consumedBytes = 1
+			break
 		case 0x0a: // LF
 			parsedBlock = { type: 'text', content: '\n', ...textStyle(state) }
 			consumedBytes = 1
@@ -461,6 +469,21 @@ export async function parseEscPos(
 					return { data: null, consumedBytes: 0 }
 				}
 				const fn = command[2]
+				if (fn === 1 && command.length >= 5) {
+					// DLE DC4 1 m t: Real-time pulse output to drawer
+					const m = command[3]
+					const t = command[4]
+					const pin = (m === 1) ? 5 : 2
+					const drawer = (m === 1) ? 2 : 1
+					const pulseMs = t * 100
+					parsedBlock = {
+						type: 'command',
+						name: 'Generate Pulse',
+						details: { mode: m, pin, drawer, t, pulseMs, protocol: 'ESC/POS Real-Time (DLE DC4)' },
+					}
+					consumedBytes = 5
+					break
+				}
 				const total = 3 + (dleDc4Params[fn] ?? 1)
 				if (command.length < total) {
 					return { data: null, consumedBytes: 0 }
@@ -604,10 +627,13 @@ export async function parseEscPos(
 							const m = command[2]
 							const t1 = command[3]
 							const t2 = command[4]
+							const pin = (m === 1 || m === 49) ? 5 : 2
+							const drawer = (m === 1 || m === 49) ? 2 : 1
+							const pulseMs = t1 * 2
 							parsedBlock = {
 								type: 'command',
 								name: 'Generate Pulse',
-								details: { mode: m, t1: t1, t2: t2 },
+								details: { mode: m, pin, drawer, t1, t2, pulseMs, protocol: 'ESC/POS (ESC p)' },
 							}
 							consumedBytes = 5
 						} else {
@@ -1333,6 +1359,14 @@ export async function parseEscPos(
 			if (command.length >= 2) {
 				const nextByte = command[1]
 				switch (nextByte) {
+					case 0x07: // BEL - Star FS BEL Cash Drawer Kick 2 (Pin 5)
+						parsedBlock = {
+							type: 'command',
+							name: 'Generate Pulse',
+							details: { mode: 1, pin: 5, drawer: 2, pulseMs: 200, protocol: 'Star Micronics (FS BEL)' },
+						}
+						consumedBytes = 2
+						break
 					case 0x2e: // . - Cancel Chinese character mode
 						parsedBlock = {
 							type: 'command',

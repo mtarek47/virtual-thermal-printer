@@ -706,6 +706,10 @@ function connectWebSocket(): void {
 			renderLabelSticker(raw)
 			return
 		}
+		if (raw && raw.type === 'drawer') {
+			handleDrawerMessage(raw)
+			return
+		}
 		if (isFirstMessage) {
 			placeholderText.classList.add('is-hidden')
 			isFirstMessage = false
@@ -726,8 +730,14 @@ function connectWebSocket(): void {
 				}
 			})
 		} else if (isEscPosCommand(data)) {
-			// Handle 'Beep' command
-			if (data.name === 'Beep') {
+			// Handle 'Generate Pulse' (Cash Drawer Kick)
+			if (data.name === 'Generate Pulse') {
+				const pin = Number(data.details?.pin ?? 2)
+				const drawer = Number(data.details?.drawer ?? 1)
+				const pulseMs = Number(data.details?.pulseMs ?? 50)
+				const protocol = String(data.details?.protocol ?? 'ESC/POS (ESC p)')
+				onDrawerOpened({ pin, drawer, pulseMs, protocol, timestamp: new Date().toISOString() })
+			} else if (data.name === 'Beep') {
 				if (isSoundEnabled) {
 					console.log('Playing beep sound')
 					beepSound.currentTime = 0
@@ -1058,4 +1068,385 @@ document.querySelectorAll<HTMLButtonElement>('.btn-copy').forEach((btn) => {
 			})
 		}
 	})
+})
+
+// ─── Station Filter Tabs (All / Receipt / Label / Drawer) ────────
+
+const viewTabs = document.querySelectorAll<HTMLButtonElement>('.view-tab')
+const bays = document.querySelectorAll<HTMLElement>('.printer-bay')
+
+function setStationFilter(filter: string) {
+	viewTabs.forEach((tab) => {
+		tab.classList.toggle('active', tab.getAttribute('data-filter') === filter)
+	})
+	bays.forEach((bay) => {
+		const bayType = bay.getAttribute('data-bay')
+		if (filter === 'all' || bayType === filter) {
+			bay.style.display = 'flex'
+		} else {
+			bay.style.display = 'none'
+		}
+	})
+	try {
+		localStorage.setItem('vtp_active_filter', filter)
+	} catch {}
+}
+
+viewTabs.forEach((tab) => {
+	tab.addEventListener('click', () => {
+		const filter = tab.getAttribute('data-filter') || 'all'
+		setStationFilter(filter)
+	})
+})
+
+const savedFilter = localStorage.getItem('vtp_active_filter')
+if (savedFilter) {
+	setStationFilter(savedFilter)
+}
+
+// ─── SMART CASH DRAWER (ESC/POS Pin 2/5 • UPOS) ──────────────────
+
+let isDrawerSoundEnabled = true
+const drawerSoundToggle = document.getElementById('setting-drawer-sound') as HTMLInputElement | null
+if (drawerSoundToggle) {
+	const savedDrawerSound = localStorage.getItem('vtp_drawer_sound')
+	if (savedDrawerSound !== null) {
+		isDrawerSoundEnabled = savedDrawerSound === 'true'
+		drawerSoundToggle.checked = isDrawerSoundEnabled
+	}
+	drawerSoundToggle.addEventListener('change', () => {
+		isDrawerSoundEnabled = drawerSoundToggle.checked
+		localStorage.setItem('vtp_drawer_sound', String(isDrawerSoundEnabled))
+	})
+}
+
+// Web Audio API Synthesizer for Authentic Cash Register Chime & Solenoid Clack
+let audioCtx: AudioContext | null = null
+
+function getAudioContext(): AudioContext | null {
+	if (typeof window === 'undefined') return null
+	try {
+		const AudioContextClass =
+			window.AudioContext ||
+			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+		if (!audioCtx && AudioContextClass) {
+			audioCtx = new AudioContextClass()
+		}
+		if (audioCtx && audioCtx.state === 'suspended') {
+			audioCtx.resume().catch(() => {})
+		}
+		return audioCtx
+	} catch {
+		return null
+	}
+}
+
+function playKaChing() {
+	if (!isDrawerSoundEnabled) return
+	const ctx = getAudioContext()
+	if (!ctx) return
+
+	const now = ctx.currentTime
+
+	// 1. Mechanical 24V Solenoid Hammer (Low punch)
+	try {
+		const oscSolenoid = ctx.createOscillator()
+		const gainSolenoid = ctx.createGain()
+		oscSolenoid.type = 'triangle'
+		oscSolenoid.frequency.setValueAtTime(140, now)
+		oscSolenoid.frequency.exponentialRampToValueAtTime(40, now + 0.08)
+		gainSolenoid.gain.setValueAtTime(0.7, now)
+		gainSolenoid.gain.exponentialRampToValueAtTime(0.01, now + 0.09)
+		oscSolenoid.connect(gainSolenoid)
+		gainSolenoid.connect(ctx.destination)
+		oscSolenoid.start(now)
+		oscSolenoid.stop(now + 0.1)
+	} catch {}
+
+	// 2. High-Frequency Cash Register Bell Chime (Ka-Ching!)
+	const bellFreqs = [1568, 2093] // G6 and C7
+	bellFreqs.forEach((freq, i) => {
+		try {
+			const oscBell = ctx.createOscillator()
+			const gainBell = ctx.createGain()
+			oscBell.type = 'sine'
+			const startTime = now + 0.02 + i * 0.04
+			oscBell.frequency.setValueAtTime(freq, startTime)
+			gainBell.gain.setValueAtTime(0.35, startTime)
+			gainBell.gain.exponentialRampToValueAtTime(0.001, startTime + 0.6)
+			oscBell.connect(gainBell)
+			gainBell.connect(ctx.destination)
+			oscBell.start(startTime)
+			oscBell.stop(startTime + 0.65)
+		} catch {}
+	})
+
+	// 3. Metallic Drawer Roll Noise (Friction slide)
+	try {
+		const bufferSize = Math.floor(ctx.sampleRate * 0.22)
+		const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+		const output = noiseBuffer.getChannelData(0)
+		for (let i = 0; i < bufferSize; i++) {
+			output[i] = Math.random() * 2 - 1
+		}
+		const whiteNoise = ctx.createBufferSource()
+		whiteNoise.buffer = noiseBuffer
+		const filter = ctx.createBiquadFilter()
+		filter.type = 'bandpass'
+		filter.frequency.value = 850
+		filter.Q.value = 3
+		const noiseGain = ctx.createGain()
+		noiseGain.gain.setValueAtTime(0.12, now + 0.04)
+		noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22)
+		whiteNoise.connect(filter)
+		filter.connect(noiseGain)
+		noiseGain.connect(ctx.destination)
+		whiteNoise.start(now + 0.04)
+		whiteNoise.stop(now + 0.23)
+	} catch {}
+}
+
+function playDrawerCloseSound() {
+	if (!isDrawerSoundEnabled) return
+	const ctx = getAudioContext()
+	if (!ctx) return
+	const now = ctx.currentTime
+
+	try {
+		const osc = ctx.createOscillator()
+		const gain = ctx.createGain()
+		osc.type = 'square'
+		osc.frequency.setValueAtTime(220, now)
+		osc.frequency.exponentialRampToValueAtTime(60, now + 0.06)
+		gain.gain.setValueAtTime(0.4, now)
+		gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07)
+		osc.connect(gain)
+		gain.connect(ctx.destination)
+		osc.start(now)
+		osc.stop(now + 0.08)
+	} catch {}
+}
+
+// Cash Drawer DOM Elements
+const cashDrawerUnit = document.getElementById('cash-drawer-unit')
+const drawerLedStatus = document.getElementById('drawer-led-status')
+const drawerStatusLabel = document.getElementById('drawer-status-label')
+const drawerLedPulse = document.getElementById('drawer-led-pulse')
+const drawerPin3Label = document.getElementById('drawer-pin3-label')
+const drawerKeySwitch = document.getElementById('drawer-key-switch')
+const drawerLockLabel = document.getElementById('drawer-lock-label')
+const keyCylinder = document.getElementById('key-cylinder')
+const drawerFace = document.getElementById('drawer-face')
+const cashTray = document.getElementById('cash-tray')
+const telSignal = document.getElementById('tel-signal')
+const telCount = document.getElementById('tel-count')
+const telTime = document.getElementById('tel-time')
+const drawerAutoCloseChk = document.getElementById('drawer-auto-close-chk') as HTMLInputElement | null
+
+let drawerIsOpen = false
+let drawerIsLocked = false
+let drawerOpenCycles = 0
+
+interface KickInfo {
+	pin?: number
+	drawer?: number
+	pulseMs?: number
+	protocol?: string
+	timestamp?: string
+}
+
+function onDrawerOpened(kickInfo?: KickInfo) {
+	drawerIsOpen = true
+	drawerOpenCycles++
+
+	if (cashDrawerUnit) {
+		cashDrawerUnit.classList.remove('closed')
+		cashDrawerUnit.classList.add('open')
+	}
+
+	if (drawerLedStatus) {
+		drawerLedStatus.className = 'status-led led-orange'
+		drawerLedStatus.title = 'Drawer State: OPEN'
+	}
+	if (drawerStatusLabel) {
+		drawerStatusLabel.textContent = 'OPEN'
+	}
+	if (drawerPin3Label) {
+		drawerPin3Label.textContent = 'PIN 3: HIGH'
+	}
+
+	// Flash 24V Solenoid LED
+	if (drawerLedPulse) {
+		drawerLedPulse.classList.add('led-pulse-active')
+		setTimeout(() => {
+			drawerLedPulse?.classList.remove('led-pulse-active')
+		}, 380)
+	}
+
+	if (telSignal && kickInfo) {
+		const pin = kickInfo.pin ?? 2
+		const ms = kickInfo.pulseMs ?? 50
+		const proto = kickInfo.protocol ?? 'ESC/POS'
+		telSignal.textContent = `${proto} • Pin ${pin} (${ms}ms)`
+	}
+	if (telCount) {
+		telCount.textContent = String(drawerOpenCycles)
+	}
+	if (telTime) {
+		telTime.textContent = new Date().toLocaleTimeString()
+	}
+
+	playKaChing()
+}
+
+function onDrawerClosed() {
+	if (!drawerIsOpen) return
+	drawerIsOpen = false
+
+	if (cashDrawerUnit) {
+		cashDrawerUnit.classList.remove('open')
+		cashDrawerUnit.classList.add('closed')
+	}
+
+	if (drawerLedStatus) {
+		drawerLedStatus.className = drawerIsLocked ? 'status-led led-red' : 'status-led led-green'
+		drawerLedStatus.title = drawerIsLocked ? 'Drawer State: LOCKED' : 'Drawer State: CLOSED (Ready)'
+	}
+	if (drawerStatusLabel) {
+		drawerStatusLabel.textContent = drawerIsLocked ? 'LOCKED' : 'CLOSED'
+	}
+	if (drawerPin3Label) {
+		drawerPin3Label.textContent = 'PIN 3: LOW'
+	}
+
+	playDrawerCloseSound()
+}
+
+function setLockUI(locked: boolean) {
+	drawerIsLocked = locked
+	if (drawerKeySwitch) {
+		drawerKeySwitch.classList.toggle('locked', locked)
+	}
+	if (drawerLockLabel) {
+		drawerLockLabel.textContent = locked ? 'LOCKED' : 'AUTO'
+	}
+	if (keyCylinder) {
+		keyCylinder.classList.toggle('locked', locked)
+	}
+	if (drawerLedStatus && !drawerIsOpen) {
+		drawerLedStatus.className = locked ? 'status-led led-red' : 'status-led led-green'
+	}
+	if (drawerStatusLabel && !drawerIsOpen) {
+		drawerStatusLabel.textContent = locked ? 'LOCKED' : 'CLOSED'
+	}
+}
+
+function handleDrawerMessage(msg: {
+	action: 'open' | 'close' | 'toggle' | 'lock_change' | 'status'
+	status?: {
+		isOpen: boolean
+		isLocked: boolean
+		openCount: number
+		lastKickedAt: string | null
+		lastKickInfo: KickInfo | null
+		autoCloseMs: number
+	}
+	kickInfo?: KickInfo
+	blocked?: boolean
+}) {
+	if (msg.status) {
+		drawerOpenCycles = msg.status.openCount
+		setLockUI(msg.status.isLocked)
+		if (telCount) telCount.textContent = String(msg.status.openCount)
+		if (msg.status.lastKickedAt && telTime) {
+			telTime.textContent = new Date(msg.status.lastKickedAt).toLocaleTimeString()
+		}
+		if (msg.status.lastKickInfo && telSignal) {
+			const info = msg.status.lastKickInfo
+			telSignal.textContent = `${info.protocol} • Pin ${info.pin} (${info.pulseMs}ms)`
+		}
+		if (drawerAutoCloseChk) {
+			drawerAutoCloseChk.checked = msg.status.autoCloseMs > 0
+		}
+	}
+
+	if (msg.action === 'open') {
+		onDrawerOpened(msg.kickInfo)
+	} else if (msg.action === 'close') {
+		onDrawerClosed()
+	} else if (msg.action === 'status') {
+		if (msg.status?.isOpen && !drawerIsOpen) {
+			onDrawerOpened(msg.status.lastKickInfo || undefined)
+		} else if (!msg.status?.isOpen && drawerIsOpen) {
+			onDrawerClosed()
+		}
+	}
+}
+
+function sendDrawerAction(action: string, payload: Record<string, unknown> = {}) {
+	if (socket && socket.readyState === WebSocket.OPEN) {
+		socket.send(
+			JSON.stringify({
+				type: 'drawer_action',
+				action,
+				...payload,
+			}),
+		)
+	} else {
+		// Fallback to REST API
+		fetch(`/cgi-bin/drawer/${action}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload),
+		}).catch(() => {})
+	}
+}
+
+// Interactive Cash Drawer Event Handlers
+document.getElementById('btn-quick-kick-1')?.addEventListener('click', () => {
+	sendDrawerAction('kick', { pin: 2, pulseMs: 50, protocol: 'Web Quick Kick (Pin 2)' })
+})
+
+document.getElementById('btn-quick-kick-2')?.addEventListener('click', () => {
+	sendDrawerAction('kick', { pin: 5, pulseMs: 50, protocol: 'Web Quick Kick (Pin 5)' })
+})
+
+document.getElementById('btn-quick-close-drawer')?.addEventListener('click', () => {
+	sendDrawerAction('close')
+})
+
+drawerFace?.addEventListener('click', () => {
+	sendDrawerAction('toggle')
+})
+
+cashTray?.addEventListener('click', () => {
+	sendDrawerAction('close')
+})
+
+drawerKeySwitch?.addEventListener('click', (e) => {
+	e.stopPropagation()
+	sendDrawerAction('lock', { locked: !drawerIsLocked })
+})
+
+document.getElementById('drawer-lock-slot')?.addEventListener('click', (e) => {
+	e.stopPropagation()
+	sendDrawerAction('lock', { locked: !drawerIsLocked })
+})
+
+drawerAutoCloseChk?.addEventListener('change', () => {
+	const delay = drawerAutoCloseChk.checked ? 4000 : 0
+	sendDrawerAction('auto_close', { delayMs: delay })
+})
+
+// Settings Dialog Tests for Cash Drawer
+document.getElementById('btn-test-kick-1')?.addEventListener('click', () => {
+	sendDrawerAction('kick', { pin: 2, pulseMs: 50, protocol: 'Settings Test (Pin 2)' })
+})
+
+document.getElementById('btn-test-kick-2')?.addEventListener('click', () => {
+	sendDrawerAction('kick', { pin: 5, pulseMs: 50, protocol: 'Settings Test (Pin 5)' })
+})
+
+document.getElementById('btn-test-drawer-sound')?.addEventListener('click', () => {
+	playKaChing()
 })

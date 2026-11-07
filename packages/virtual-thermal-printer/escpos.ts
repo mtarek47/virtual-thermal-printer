@@ -6,6 +6,7 @@ import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { PNG } from 'pngjs'
+import { cashDrawer } from './drawer.js'
 
 const ESC = 0x1b
 const INITIALIZE_PRINTER = 0x40 // '@' - the byte after ESC in "ESC @"
@@ -114,6 +115,15 @@ export async function processEscPosStream(
 			while (true) {
 				const { done, value: block } = await reader.read()
 				if (done) break
+
+				if (block.type === 'command' && block.name === 'Generate Pulse') {
+					cashDrawer.kick({
+						pin: (block.details?.pin as number) ?? 2,
+						drawer: (block.details?.drawer as number) ?? 1,
+						pulseMs: (block.details?.pulseMs as number) ?? 50,
+						protocol: (block.details?.protocol as string) ?? 'ESC/POS (ESC p)',
+					})
+				}
 
 				const dataToSend = JSON.stringify(block)
 				for (const client of connectedClients) {
@@ -259,6 +269,29 @@ export async function handleConnection(
 				(firstChunk[1] === 0x21 || firstChunk[1] === 0x50) // '!' or 'P'
 			) {
 				await handleDocumentStream(socket, firstChunk, connectedClients)
+			} else if (firstChunk.length === 1 && firstChunk[0] === 0x07) {
+				// Standalone Star Micronics BEL (0x07) Drawer Kick (Pin 2)
+				cashDrawer.kick({ pin: 2, drawer: 1, pulseMs: 200, protocol: 'Star Micronics (BEL 0x07)' })
+			} else if (firstChunk.length === 2 && firstChunk[0] === 0x1c && firstChunk[1] === 0x07) {
+				// Standalone Star Micronics FS BEL (0x1c 0x07) Drawer Kick (Pin 5)
+				cashDrawer.kick({ pin: 5, drawer: 2, pulseMs: 200, protocol: 'Star Micronics (FS BEL)' })
+			} else if (firstChunk.length >= 5 && firstChunk[0] === 0x1b && firstChunk[1] === 0x70) {
+				// Standalone ESC p m t1 t2
+				const m = firstChunk[2]
+				const t1 = firstChunk[3]
+				const pin = (m === 1 || m === 49) ? 5 : 2
+				const drawer = (m === 1 || m === 49) ? 2 : 1
+				cashDrawer.kick({ pin, drawer, pulseMs: t1 * 2, protocol: 'ESC/POS (Standalone ESC p)' })
+			} else if (firstChunk.length >= 2 && firstChunk[0] === 0x10 && firstChunk[1] === 0x04) {
+				// DLE EOT n - Real-time status transmission query
+				const n = firstChunk[2] || 1
+				if (n === 1) {
+					// Bit 2: Drawer sensor pin 3 status (0 = Closed, 1 = Open)
+					const statusByte = 0x12 | (cashDrawer.isOpen ? 0x04 : 0x00)
+					socket.write(Buffer.from([statusByte]))
+				} else {
+					socket.write(Buffer.from([0x12])) // Online / paper OK status
+				}
 			} else {
 				socket.unshift(firstChunk)
 				const readable = Readable.toWeb(socket) as ReadableStream<Uint8Array>

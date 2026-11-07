@@ -15,6 +15,7 @@ console.log('\x1b[36m%s\x1b[0m', '==============================================
 console.log('  🌐 Web Interface:      http://localhost:8000')
 console.log('  🧾 Receipt Port:        9100 (ESC/POS / ePOS, fallback: 9102)')
 console.log('  🏷️  Barcode Label Port:  9101 (TSPL / ZPL / CUPS)')
+console.log('  🗄️  Smart Cash Drawer:   Integrated (Pin 2/5 • UPOS • 24V Solenoid)')
 console.log('\x1b[36m%s\x1b[0m', '-------------------------------------------------------')
 
 // 0. Ensure ports 8000, 9100, 9101 are not blocked by stale processes

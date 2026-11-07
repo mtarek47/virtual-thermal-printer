@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { isSea, getAsset } from 'node:sea'
 import { handleConnection, processEscPosStream } from './escpos.js'
+import { cashDrawer } from './drawer.js'
 import {
 	handleLabelConnection,
 	processTsplStream,
@@ -71,8 +72,31 @@ app.use(eposEndpoint, cors())
 app.post(eposEndpoint, async (context) => {
 	const requestBody = await context.req.text()
 
+	// 1. Check for Epson ePOS XML <pulse> drawer kick tag
+	if (requestBody.includes('<pulse')) {
+		const drawerMatch = requestBody.match(/drawer="([^"]+)"/)
+		const timeMatch = requestBody.match(/time="pulse_(\d+)"/)
+		const drawerName = drawerMatch ? drawerMatch[1] : 'drawer_1'
+		const pin = drawerName.includes('2') ? 5 : 2
+		const pulseMs = timeMatch ? parseInt(timeMatch[1], 10) : 100
+		cashDrawer.kick({
+			pin,
+			drawer: pin === 5 ? 2 : 1,
+			pulseMs,
+			protocol: 'Epson ePOS XML (<pulse>)',
+		})
+	}
+
 	const commandMatch = requestBody.match(/<command>([^<]+)<\/command>/)
 	if (!commandMatch || !commandMatch[1]) {
+		// If it was just a pulse command without print payload
+		if (requestBody.includes('<pulse')) {
+			return context.text(
+				`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><response xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print" success="true" code="" status="0" batterystatus="0" drawerstatus="${cashDrawer.isOpen ? 'open' : 'closed'}" printjobid="1" /></s:Body></s:Envelope>`,
+				200,
+				{ 'Content-Type': 'text/xml' },
+			)
+		}
 		return context.text('Invalid ePOS request', 400)
 	}
 
@@ -91,10 +115,65 @@ app.post(eposEndpoint, async (context) => {
 	await processEscPosStream(stream, connectedClients)
 
 	return context.text(
-		`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><response xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print" success="true" code="" status="0" batterystatus="0" printjobid="2" /></s:Body></s:Envelope>`,
+		`<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><response xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print" success="true" code="" status="0" batterystatus="0" drawerstatus="${cashDrawer.isOpen ? 'open' : 'closed'}" printjobid="2" /></s:Body></s:Envelope>`,
 		200,
 		{ 'Content-Type': 'text/xml' },
 	)
+})
+
+// ─── Cash Drawer REST & UPOS (UnifiedPOS) Endpoints ─────────────────────────
+app.use('/cgi-bin/drawer/*', cors())
+
+app.get('/cgi-bin/drawer/status', (context) => {
+	return context.json(cashDrawer.getStatus())
+})
+
+app.post('/cgi-bin/drawer/open', async (context) => {
+	let pin = 2
+	let pulseMs = 50
+	let protocol = 'UnifiedPOS / REST API'
+	try {
+		const body = await context.req.json()
+		if (body.pin === 5 || body.drawer === 2) pin = 5
+		if (body.pulseMs) pulseMs = Number(body.pulseMs)
+		if (body.protocol) protocol = String(body.protocol)
+	} catch {
+		// Empty body is valid
+	}
+	const result = cashDrawer.kick({ pin, pulseMs, protocol })
+	return context.json({ ...cashDrawer.getStatus(), ...result })
+})
+
+app.post('/cgi-bin/drawer/close', (context) => {
+	cashDrawer.close()
+	return context.json(cashDrawer.getStatus())
+})
+
+app.post('/cgi-bin/drawer/toggle', (context) => {
+	cashDrawer.toggle()
+	return context.json(cashDrawer.getStatus())
+})
+
+app.post('/cgi-bin/drawer/lock', async (context) => {
+	let locked = !cashDrawer.isLocked
+	try {
+		const body = await context.req.json()
+		if (typeof body.locked === 'boolean') {
+			locked = body.locked
+		}
+	} catch {}
+	cashDrawer.setLock(locked)
+	return context.json(cashDrawer.getStatus())
+})
+
+app.post('/cgi-bin/drawer/auto-close', async (context) => {
+	try {
+		const body = await context.req.json()
+		if (typeof body.autoCloseMs === 'number') {
+			cashDrawer.setAutoClose(body.autoCloseMs)
+		}
+	} catch {}
+	return context.json(cashDrawer.getStatus())
 })
 
 // Barcode Sticker / Label Printer Endpoints (TSPL / ZPL / JSON)
@@ -167,6 +246,21 @@ if (isSea()) {
 
 const connectedClients = new Set<WebSocket>()
 
+cashDrawer.subscribe((event) => {
+	const payload = JSON.stringify({
+		type: 'drawer',
+		action: event.action,
+		status: event.status,
+		kickInfo: event.kickInfo,
+		blocked: event.blocked,
+	})
+	for (const client of connectedClients) {
+		try {
+			client.send(payload)
+		} catch {}
+	}
+})
+
 const server: ServerType = serve(
 	{
 		fetch: app.fetch,
@@ -193,6 +287,42 @@ server.on('upgrade', (request, socket, head) => {
 wss.on('connection', (ws) => {
 	console.log('WebSocket opened.')
 	connectedClients.add(ws)
+
+	// Send current cash drawer state immediately on connect
+	try {
+		ws.send(
+			JSON.stringify({
+				type: 'drawer',
+				action: 'status',
+				status: cashDrawer.getStatus(),
+			}),
+		)
+	} catch {}
+
+	ws.on('message', (raw) => {
+		try {
+			const msg = JSON.parse(raw.toString())
+			if (msg.type === 'drawer_action') {
+				if (msg.action === 'kick' || msg.action === 'open') {
+					cashDrawer.kick({
+						pin: msg.pin || 2,
+						drawer: msg.drawer || (msg.pin === 5 ? 2 : 1),
+						pulseMs: msg.pulseMs || 50,
+						protocol: msg.protocol || 'Web Dashboard (Manual Kick)',
+					})
+				} else if (msg.action === 'close') {
+					cashDrawer.close()
+				} else if (msg.action === 'toggle') {
+					cashDrawer.toggle()
+				} else if (msg.action === 'lock') {
+					cashDrawer.setLock(Boolean(msg.locked))
+				} else if (msg.action === 'auto_close') {
+					cashDrawer.setAutoClose(Number(msg.delayMs) ?? 4000)
+				}
+			}
+		} catch {}
+	})
+
 	ws.on('close', () => {
 		console.log('WebSocket closed.')
 		connectedClients.delete(ws)

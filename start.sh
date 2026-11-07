@@ -51,6 +51,7 @@ fi
 echo -e "  🌐 Web Interface:      ${GREEN}http://localhost:8000${NC}"
 echo -e "  🧾 Receipt Port:        ${GREEN}9100${NC} (ESC/POS / ePOS)"
 echo -e "  🏷️  Barcode Label Port:  ${GREEN}9101${NC} (TSPL / ZPL / CUPS)"
+echo -e "  🗄️  Smart Cash Drawer:   ${GREEN}Integrated${NC} (Pin 2/5 • UPOS • 24V Solenoid)"
 echo -e "${CYAN}-------------------------------------------------------${NC}"
 
 # Open browser in background
